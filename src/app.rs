@@ -5,7 +5,7 @@
 //!   screen; **Library** in its top bar goes back.
 //! - `Space` (or a click on the card) shows the answer, then moves to
 //!   the next card (wrapping around at the end, so browsing never stops).
-//! - `Left` or **Anterior** returns to the previously visited card.
+//! - `Left` or **Previous** returns to the previously visited card.
 //! - `L` toggles the current card in the study-later list.
 //! - The study top bar picks the card order (deck order or shuffled)
 //!   and which cards to show (all, unseen only, or study-later only).
@@ -824,7 +824,7 @@ impl RunkiApp {
                 centered_row(ui, |ui| {
                     let previous = ui
                         .add_enabled_ui(can_previous && !self.show_reset_confirm, |ui| {
-                            key_hint(ui, p, "Left", "Anterior", p.muted)
+                            key_hint(ui, p, "Left", "Previous", p.muted)
                         })
                         .inner
                         .on_hover_text(
@@ -1631,7 +1631,7 @@ mod tests {
             false,
             3_000,
         ));
-        click_study_control(&mut app, &egui::Context::default(), "Anterior");
+        click_study_control(&mut app, &egui::Context::default(), "Previous");
         assert_eq!(session(&app).current_id(), Some("a"));
         assert_eq!(session(&app).seen_count(), 1);
         assert_eq!(session(&app).later_count(), 1);
@@ -1649,7 +1649,7 @@ mod tests {
             app.space();
         }
         assert!(session(&app).current_id().is_none());
-        click_study_control(&mut app, &egui::Context::default(), "Anterior");
+        click_study_control(&mut app, &egui::Context::default(), "Previous");
         assert_eq!(session(&app).current_id(), Some("c"));
         assert_eq!(session(&app).seen_count(), 3);
         assert!(!session(&app).revealed());
@@ -1665,10 +1665,10 @@ mod tests {
         assert_eq!(session(&app).current_id(), Some("b"));
         click_study_control(&mut app, &ctx, "Study later");
         assert!(session(&app).is_later("b"));
-        click_study_control(&mut app, &ctx, "Anterior");
+        click_study_control(&mut app, &ctx, "Previous");
         assert_eq!(session(&app).current_id(), Some("a"));
         assert_eq!(session(&app).seen_count(), 1);
-        click_study_control(&mut app, &ctx, "Anterior");
+        click_study_control(&mut app, &ctx, "Previous");
         assert_eq!(session(&app).current_id(), Some("a"), "disabled at start");
     }
 
