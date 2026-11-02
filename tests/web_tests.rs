@@ -284,6 +284,34 @@ fn order_filter_reshuffle_and_reset_use_shared_session_behavior() {
 }
 
 #[test]
+fn web_previous_works_immediately_after_server_restart_at_saved_position() {
+    let (_dir, library) = fixture();
+    let (mut server, _) = start(Some(library.clone()));
+    let first = post(&server, "/api/session/open", json!({"deck":"deck.tsv"}));
+    post(&server, "/api/session/space", json!({}));
+    let second = post(&server, "/api/session/space", json!({}));
+    post(&server, "/api/session/toggle-later", json!({}));
+    server.stop().unwrap();
+    let (server, _) = start(Some(library.clone()));
+    let resumed = post(&server, "/api/session/open", json!({"deck":"deck.tsv"}));
+    assert_eq!(resumed["current_id"], second["current_id"]);
+    assert_eq!(
+        resumed["can_previous"], true,
+        "no advance required after restart"
+    );
+    let previous = post(&server, "/api/session/previous", json!({}));
+    assert_eq!(previous["current_id"], first["current_id"]);
+    assert_eq!(previous["seen"], 1);
+    assert_eq!(previous["later"], 1);
+    let path = progress::state_path(&library.join("deck.tsv"), Some(&library));
+    let saved = progress::load(&library.join("deck.tsv"), &path).into_state();
+    assert_eq!(
+        saved.prefs.position.as_deref(),
+        first["current_id"].as_str()
+    );
+}
+
+#[test]
 fn web_previous_survives_page_reload_and_saves_position_without_losing_progress() {
     let (_dir, library) = fixture();
     let (server, _) = start(Some(library.clone()));

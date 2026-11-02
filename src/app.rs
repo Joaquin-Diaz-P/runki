@@ -1618,6 +1618,26 @@ mod tests {
     }
 
     #[test]
+    fn previous_button_works_on_resumed_card_without_any_new_advance() {
+        let (mut app, _temp) = test_app("previous-resumed", &["a"]);
+        let old = app.session.take().unwrap();
+        let mut saved = old.state().clone();
+        saved.prefs.position = Some("b".into());
+        saved.mark_seen("a", 2_000);
+        app.session = Some(StudySession::new(
+            old.deck().clone(),
+            saved,
+            old.state_path().clone(),
+            false,
+            3_000,
+        ));
+        click_study_control(&mut app, &egui::Context::default(), "Anterior");
+        assert_eq!(session(&app).current_id(), Some("a"));
+        assert_eq!(session(&app).seen_count(), 1);
+        assert_eq!(session(&app).later_count(), 1);
+    }
+
+    #[test]
     fn previous_button_returns_from_the_finished_unseen_screen() {
         let (mut app, _temp) = test_app("previous-button", &[]);
         app.session

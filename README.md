@@ -184,7 +184,7 @@ off with an error.
 
 The browser (including Safari on iOS) has an **Anterior** button beside
 **Reveal/Next** to return to cards visited in the current web session,
-including in Unseen and after finishing the deck. Seen marks and study-later
+including after reopening a saved deck, in Unseen, and after finishing the deck. Seen marks and study-later
 flags are preserved. Reloading the page keeps this history while the server
 session remains open. After updating Runki, reload Safari to load the new button.
 
@@ -243,7 +243,7 @@ You can also drag a deck file onto the study window to open it.
 | Key / button | Action |
 | --- | --- |
 | `Space` or click the card | Show the answer; press again for the next card (wraps around at the end) |
-| `←` or **Anterior** | Return to the previous card in this desktop study session, with its answer hidden; keeps seen progress and study-later flags |
+| `←` or **Anterior** | Return to the previous card, including after resuming a saved deck, with its answer hidden; keeps seen progress and study-later flags |
 | `L` | Toggle the current card in the study-later list |
 | **Library** | Save and go back to the library screen |
 | **Theme icon** (top right) | Cycle match system → light → dark; remembered between launches |
@@ -253,8 +253,9 @@ You can also drag a deck file onto the study window to open it.
 
 **Anterior** also works in `Unseen`, `Later`, and after finishing the
 last unseen card. Moving forward retraces the cards you went back over.
-Changing the order/filter, reshuffling, resetting, or opening another
-deck starts a fresh navigation history. Progress still saves automatically.
+Without session history, **Anterior** uses the previous card in the current
+deck/shuffled order. In Unseen it can revisit seen cards; in Later it steps
+back through flagged cards. Progress still saves automatically.
 
 Revealing a card's answer marks it seen. In `Unseen`, the card stays
 on screen until you move on. When every card has been seen, `Unseen`

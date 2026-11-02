@@ -144,19 +144,35 @@ impl StudySession {
         self.revealed
     }
 
-    /// Whether there is a previously visited card to return to.
+    /// Whether a previous card is available, including after resuming a deck.
     pub fn can_previous(&self) -> bool {
-        !self.back_history.is_empty()
+        !self.back_history.is_empty() || self.previous_index().is_some()
     }
 
     /// Return to the previous card, with its answer hidden. Seen marks and
     /// study-later flags stay intact; the new position is saved as usual.
+    /// When no in-memory history remains, step back in the current card order.
     pub fn previous(&mut self, now: i64) {
-        if let Some(previous) = self.back_history.pop() {
+        if let Some(previous) = self.back_history.pop().or_else(|| self.previous_index()) {
             self.forward_history.push(self.current_index());
             self.set_current_index(Some(previous), now);
             self.revealed = false;
         }
+    }
+
+    fn previous_index(&self) -> Option<usize> {
+        let before = match self.current_index() {
+            Some(index) => self.rank[index],
+            // Reopening a finished Unseen deck has no current card or history.
+            None if self.filter() == CardFilter::Unseen => self.order_cache.len(),
+            None => return None,
+        };
+        self.order_cache[..before]
+            .iter()
+            .rev()
+            .copied()
+            // Unseen must let users revisit seen cards without clearing marks.
+            .find(|&index| self.filter() != CardFilter::Later || self.passes(index))
     }
 
     fn clear_history(&mut self) {
@@ -536,6 +552,71 @@ mod tests {
     }
 
     #[test]
+    fn previous_is_available_immediately_after_resuming_saved_position() {
+        for filter in [CardFilter::All, CardFilter::Unseen, CardFilter::Later] {
+            let mut s = session(
+                &["a", "b", "c"],
+                state(
+                    &["a", "c"],
+                    &["a", "b"],
+                    CardOrder::Deck,
+                    filter,
+                    0,
+                    Some("c"),
+                ),
+            );
+            assert!(s.back_history.is_empty());
+            assert!(
+                s.can_previous(),
+                "saved position has a previous card in {filter:?}"
+            );
+            let seen = s.state().seen.clone();
+            let later = s.state().later.clone();
+            s.previous(2_000);
+            assert_eq!(
+                s.current_id(),
+                Some(if filter == CardFilter::Later {
+                    "a"
+                } else {
+                    "b"
+                })
+            );
+            assert_eq!(s.state().seen, seen);
+            assert_eq!(s.state().later, later);
+            s.space(3_000);
+            s.space(3_001);
+            assert_eq!(s.current_id(), Some("c"), "next returns to the saved card");
+        }
+    }
+
+    #[test]
+    fn previous_after_reopening_finished_or_shuffled_deck_uses_saved_order() {
+        let mut finished = session(
+            &["a", "b", "c"],
+            state(
+                &[],
+                &["a", "b", "c"],
+                CardOrder::Deck,
+                CardFilter::Unseen,
+                0,
+                None,
+            ),
+        );
+        assert!(finished.current_id().is_none());
+        assert!(finished.can_previous());
+        finished.previous(2_000);
+        assert_eq!(finished.current_id(), Some("c"));
+        assert_eq!(finished.seen_count(), 3);
+
+        let mut saved = state(&[], &[], CardOrder::Shuffled, CardFilter::All, 42, None);
+        let ordered = ordered_ids(&session(&["a", "b", "c"], saved.clone()));
+        saved.prefs.position = Some(ordered[2].clone());
+        let mut shuffled = session(&["a", "b", "c"], saved);
+        shuffled.previous(2_000);
+        assert_eq!(shuffled.current_id(), Some(ordered[1].as_str()));
+    }
+
+    #[test]
     fn previous_retraces_actual_visits_in_deck_and_shuffled_order() {
         for order in [CardOrder::Deck, CardOrder::Shuffled] {
             let mut s = session(
@@ -636,7 +717,7 @@ mod tests {
                 2 => s.reshuffle(4_000),
                 _ => s.reset(4_000),
             }
-            assert!(!s.can_previous());
+            assert!(s.back_history.is_empty());
             assert!(s.forward_history.is_empty());
         }
         for ids in [&[][..], &["a"][..]] {
