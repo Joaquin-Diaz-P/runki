@@ -237,12 +237,18 @@ You can also drag a deck file onto the study window to open it.
 | Key / button | Action |
 | --- | --- |
 | `Space` or click the card | Show the answer; press again for the next card (wraps around at the end) |
+| `←` or **Anterior** | Return to the previous card in this desktop study session, with its answer hidden; keeps seen progress and study-later flags |
 | `L` | Toggle the current card in the study-later list |
 | **Library** | Save and go back to the library screen |
 | **Theme icon** (top right) | Cycle match system → light → dark; remembered between launches |
 | **Order:** `Deck order` / `Shuffled` | Show cards as they are in the deck, or in a shuffled order |
 | **Reshuffle** (shuffled only) | Pick a new shuffle; the card on screen stays |
 | **Show:** `All` / `Unseen` / `Later (n)` | Show every card, only cards you have not seen yet, or only flagged cards |
+
+**Anterior** also works in `Unseen`, `Later`, and after finishing the
+last unseen card. Moving forward retraces the cards you went back over.
+Changing the order/filter, reshuffling, resetting, or opening another
+deck starts a fresh navigation history. Progress still saves automatically.
 
 Revealing a card's answer marks it seen. In `Unseen`, the card stays
 on screen until you move on. When every card has been seen, `Unseen`

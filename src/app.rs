@@ -5,6 +5,7 @@
 //!   screen; **Library** in its top bar goes back.
 //! - `Space` (or a click on the card) shows the answer, then moves to
 //!   the next card (wrapping around at the end, so browsing never stops).
+//! - `Left` or **Anterior** returns to the previously visited card.
 //! - `L` toggles the current card in the study-later list.
 //! - The study top bar picks the card order (deck order or shuffled)
 //!   and which cards to show (all, unseen only, or study-later only).
@@ -509,22 +510,32 @@ impl RunkiApp {
         }
     }
 
+    fn previous(&mut self) {
+        if let Some(session) = &mut self.session {
+            session.previous(progress::now_ms());
+        }
+    }
+
     fn study_shortcuts(&mut self, ctx: &egui::Context) {
         if self.screen == Screen::Study
             && !ctx.memory(|memory| memory.has_focus(web_port_field_id()))
         {
-            // Consume Space/L before widgets see them, so a focused
+            // Consume study keys before widgets see them, so a focused
             // button cannot also trigger on Space and double-advance.
             // While the reset confirmation is open they are consumed
             // but ignored.
             let space = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space));
+            let previous =
+                ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft));
             let later_key = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::L));
             let escape = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
             if escape {
                 self.show_reset_confirm = false;
             }
             if !self.show_reset_confirm {
-                if space {
+                if previous {
+                    self.previous();
+                } else if space {
                     self.space();
                 }
                 if later_key {
@@ -793,6 +804,10 @@ impl RunkiApp {
     }
 
     fn bottom_bar(&mut self, ctx: &egui::Context, p: &Palette) {
+        let can_previous = self
+            .session
+            .as_ref()
+            .is_some_and(StudySession::can_previous);
         let current = self.session.as_ref().and_then(|session| {
             let card = session.current_card()?;
             Some((session.is_later(&card.id), session.revealed()))
@@ -806,11 +821,22 @@ impl RunkiApp {
             }))
             .show_separator_line(false)
             .show(ctx, |ui| {
-                let Some((flagged, revealed)) = current else {
-                    ui.add_space(30.0);
-                    return;
-                };
                 centered_row(ui, |ui| {
+                    let previous = ui
+                        .add_enabled(
+                            can_previous && !self.show_reset_confirm,
+                            egui::Button::new("Anterior").min_size(egui::vec2(0.0, 30.0)),
+                        )
+                        .on_hover_text(
+                            "Left arrow: return to the previous card; keeps your progress",
+                        );
+                    if previous.clicked() {
+                        self.previous();
+                        ctx.request_repaint();
+                    }
+                    let Some((flagged, revealed)) = current else {
+                        return;
+                    };
                     let label = if revealed { "Next" } else { "Show answer" };
                     if key_hint(ui, p, "Space", label, p.muted).clicked() {
                         self.space();
@@ -1537,6 +1563,100 @@ mod tests {
 
     fn session(app: &RunkiApp) -> &StudySession {
         app.session.as_ref().expect("session")
+    }
+
+    #[test]
+    fn previous_shortcut_preserves_progress_and_waits_for_reset_dialog() {
+        let (mut app, _temp) = test_app("previous-shortcut", &["a"]);
+        app.space();
+        app.space();
+        app.space();
+        app.space();
+        assert_eq!(session(&app).current_id(), Some("c"));
+        let ctx = egui::Context::default();
+        for (modal, expected) in [(true, "c"), (false, "b")] {
+            app.show_reset_confirm = modal;
+            let _ = ctx.run(
+                egui::RawInput {
+                    events: vec![egui::Event::Key {
+                        key: egui::Key::ArrowLeft,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                    ..Default::default()
+                },
+                |ctx| {
+                    app.study_shortcuts(ctx);
+                    assert_eq!(session(&app).current_id(), Some(expected));
+                    assert!(!ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)));
+                },
+            );
+        }
+        assert!(!session(&app).revealed());
+        assert_eq!(session(&app).seen_count(), 2);
+        assert!(session(&app).is_later("a"));
+        app.save_now();
+        let s = session(&app);
+        let saved = progress::load(&s.deck().path, s.state_path()).into_state();
+        assert_eq!(saved.prefs.position.as_deref(), Some("b"));
+        assert!(saved.is_seen("a") && saved.is_seen("b"));
+        assert!(saved.is_later("a"));
+    }
+
+    #[test]
+    fn previous_button_returns_from_the_finished_unseen_screen() {
+        let (mut app, _temp) = test_app("previous-button", &[]);
+        app.session
+            .as_mut()
+            .unwrap()
+            .set_filter(CardFilter::Unseen, 2_000);
+        for _ in 0..3 {
+            app.space();
+            app.space();
+        }
+        assert!(session(&app).current_id().is_none());
+        let ctx = egui::Context::default();
+        let mut draw = |events| {
+            ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 650.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| app.bottom_bar(ctx, &Palette::of(ctx)),
+            )
+        };
+        let output = draw(vec![]);
+        let pos = output
+            .shapes
+            .iter()
+            .find_map(|shape| {
+                if let egui::Shape::Text(text) = &shape.shape {
+                    (text.galley.text() == "Anterior").then(|| text.pos + text.galley.size() / 2.0)
+                } else {
+                    None
+                }
+            })
+            .expect("Previous remains visible after finishing Unseen");
+        for pressed in [true, false] {
+            draw(vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]);
+        }
+        assert_eq!(session(&app).current_id(), Some("c"));
+        assert_eq!(session(&app).seen_count(), 3);
+        assert!(!session(&app).revealed());
     }
 
     #[derive(Default)]
