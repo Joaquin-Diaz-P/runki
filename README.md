@@ -182,6 +182,12 @@ an error without changing the remembered port. If restoring the old listener
 also fails, Web turns off. Starting Web on a busy port likewise leaves it
 off with an error.
 
+The browser (including Safari on iOS) has an **Anterior** button beside
+**Reveal/Next** to return to cards visited in the current web session,
+including in Unseen and after finishing the deck. Seen marks and study-later
+flags are preserved. Reloading the page keeps this history while the server
+session remains open. After updating Runki, reload Safari to load the new button.
+
 The browser can browse the library, reveal and advance cards, toggle study
 later, change order and filters, reshuffle, and reset seen progress. Decks
 must be downloaded and inside the chosen library; a deck opened separately

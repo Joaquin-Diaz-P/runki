@@ -823,10 +823,10 @@ impl RunkiApp {
             .show(ctx, |ui| {
                 centered_row(ui, |ui| {
                     let previous = ui
-                        .add_enabled(
-                            can_previous && !self.show_reset_confirm,
-                            egui::Button::new("Anterior").min_size(egui::vec2(0.0, 30.0)),
-                        )
+                        .add_enabled_ui(can_previous && !self.show_reset_confirm, |ui| {
+                            key_hint(ui, p, "Left", "Anterior", p.muted)
+                        })
+                        .inner
                         .on_hover_text(
                             "Left arrow: return to the previous card; keeps your progress",
                         );
@@ -1388,18 +1388,6 @@ fn theme_toggle(ui: &mut egui::Ui, p: &Palette, current: egui::ThemePreference) 
         .clicked()
 }
 
-/// A key drawn as a small keycap.
-fn keycap(ui: &mut egui::Ui, p: &Palette, key: &str) {
-    egui::Frame::new()
-        .fill(p.surface)
-        .stroke(egui::Stroke::new(1.0_f32, p.line))
-        .corner_radius(5)
-        .inner_margin(egui::Margin::symmetric(6, 1))
-        .show(ui, |ui| {
-            ui.label(egui::RichText::new(key).size(11.0).color(p.muted));
-        });
-}
-
 /// A clickable "keycap + label" hint, for mouse users.
 fn key_hint(
     ui: &mut egui::Ui,
@@ -1408,24 +1396,48 @@ fn key_hint(
     label: &str,
     color: egui::Color32,
 ) -> egui::Response {
-    let background = ui.painter().add(egui::Shape::Noop);
-    let response = ui
-        .scope_builder(egui::UiBuilder::new().sense(egui::Sense::click()), |ui| {
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        keycap(ui, p, key);
-                        ui.label(egui::RichText::new(label).color(color));
-                    });
-                });
-        })
-        .response;
-    if response.hovered() {
-        ui.painter().set(
-            background,
-            egui::epaint::RectShape::filled(response.rect, 8, p.hover),
+    let key_text =
+        ui.painter()
+            .layout_no_wrap(key.to_owned(), egui::FontId::proportional(11.0), p.muted);
+    let label_text = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::TextStyle::Body.resolve(ui.style()),
+        color,
+    );
+    let key_size = key_text.size() + egui::vec2(12.0, 2.0);
+    let gap = ui.spacing().item_spacing.x;
+    let size = egui::vec2(
+        key_size.x + gap + label_text.size().x + 20.0,
+        key_size.y.max(label_text.size().y) + 12.0,
+    );
+    // One hit target for the whole hint: nested selectable labels must not
+    // intercept taps on the keycap or label.
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
+    });
+    if ui.is_rect_visible(rect) {
+        if response.hovered() || response.has_focus() {
+            ui.painter().rect_filled(rect, 8, p.hover);
+        }
+        let key_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + 10.0, rect.center().y - key_size.y / 2.0),
+            key_size,
         );
+        ui.painter().rect_filled(key_rect, 5, p.surface);
+        ui.painter().rect_stroke(
+            key_rect,
+            5,
+            egui::Stroke::new(1.0_f32, p.line),
+            egui::StrokeKind::Inside,
+        );
+        ui.painter()
+            .galley(key_rect.min + egui::vec2(6.0, 1.0), key_text, p.muted);
+        let label_pos = egui::pos2(
+            key_rect.right() + gap,
+            rect.center().y - label_text.size().y / 2.0,
+        );
+        ui.painter().galley(label_pos, label_text, color);
     }
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -1617,7 +1629,30 @@ mod tests {
             app.space();
         }
         assert!(session(&app).current_id().is_none());
+        click_study_control(&mut app, &egui::Context::default(), "Anterior");
+        assert_eq!(session(&app).current_id(), Some("c"));
+        assert_eq!(session(&app).seen_count(), 3);
+        assert!(!session(&app).revealed());
+    }
+
+    #[test]
+    fn study_control_keycaps_and_labels_respond_to_mouse_clicks() {
+        let (mut app, _temp) = test_app("click-study-controls", &[]);
         let ctx = egui::Context::default();
+        click_study_control(&mut app, &ctx, "Show answer");
+        assert!(session(&app).revealed());
+        click_study_control(&mut app, &ctx, "Next");
+        assert_eq!(session(&app).current_id(), Some("b"));
+        click_study_control(&mut app, &ctx, "Study later");
+        assert!(session(&app).is_later("b"));
+        click_study_control(&mut app, &ctx, "Anterior");
+        assert_eq!(session(&app).current_id(), Some("a"));
+        assert_eq!(session(&app).seen_count(), 1);
+        click_study_control(&mut app, &ctx, "Anterior");
+        assert_eq!(session(&app).current_id(), Some("a"), "disabled at start");
+    }
+
+    fn click_study_control(app: &mut RunkiApp, ctx: &egui::Context, label: &str) {
         let mut draw = |events| {
             ctx.run(
                 egui::RawInput {
@@ -1637,12 +1672,12 @@ mod tests {
             .iter()
             .find_map(|shape| {
                 if let egui::Shape::Text(text) = &shape.shape {
-                    (text.galley.text() == "Anterior").then(|| text.pos + text.galley.size() / 2.0)
+                    (text.galley.text() == label).then(|| text.pos + text.galley.size() / 2.0)
                 } else {
                     None
                 }
             })
-            .expect("Previous remains visible after finishing Unseen");
+            .expect("study control is visible");
         for pressed in [true, false] {
             draw(vec![
                 egui::Event::PointerMoved(pos),
@@ -1654,9 +1689,6 @@ mod tests {
                 },
             ]);
         }
-        assert_eq!(session(&app).current_id(), Some("c"));
-        assert_eq!(session(&app).seen_count(), 3);
-        assert!(!session(&app).revealed());
     }
 
     #[derive(Default)]
